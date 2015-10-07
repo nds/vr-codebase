@@ -44,11 +44,11 @@ data => {
     remove_primers => 1,
     primers_file   => /path/to/primers/file, #Essential if primers are to be removed
     primer_removal_tool => 'quasr' # quasr is the only option for now.
-
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
+    circlator_exec => '/software/pathogen/external/bin/circlator',
     khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
     QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar',
     trimmomatic_jar => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
@@ -58,6 +58,7 @@ data => {
     max_threads => 1,
     single_cell => 1, # Put this in to assemble single cell data. For normal assemblies, leave it out.
     iva_qc => 1, # If set, run iva_qc. Default - do not run iva_qc
+    circularise => 0, # If set, run circlator. Default: do not run
     kraken_db => 'path to kraken db', #for iva_qc
 },
 
@@ -144,7 +145,9 @@ our %options = (
                 QUASR_exec	     => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
                 trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
                 iva_qc_exec		 => '/software/pathogen/external/bin/iva_qc',
+                circlator_exec   => '/software/pathogen/external/bin/circlator',
                 iva_qc	=> 0,
+                circularise => 0,
                 kraken_db => '/lustre/scratch108/pathogen/pathpipe/kraken/assemblyqc_fluhiv_20150728',
                 adapters_file    => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
                 primers_file     => '',
@@ -356,6 +359,7 @@ use File::Path qw(make_path remove_tree);
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
 use Bio::AssemblyImprovement::IvaQC::Main;
+use Bio::AssemblyImprovement::Circlator::Main;
 
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new(
   assembler => "$self->{assembler}"
@@ -437,6 +441,18 @@ if(defined($self->{iva_qc}) && $self->{iva_qc} && defined(qq[$self->{kraken_db}]
     \$iva_qc->run();
     system('touch $output_directory/$self->{prefix}$self->{assembler}_iva_qc_done'); #The prefix in the config file is not always the name of assembler, so we append assembler name
 }
+
+# Run circlator if needed
+if(defined($self->{circularise})) 
+{
+  	my \$circlator = Bio::AssemblyImprovement::Circlator::Main->new(
+    			'assembly'			  => \$assembler->optimised_assembly_file_path(),
+    			'corrected_reads'     => qq[$tmp_directory].'/forward.fastq',
+    			'circlator_exec'      => qq[$self->{circlator_exec}],
+    			'working_directory'	  => qq[$tmp_directory/$self->{assembler}_assembly], #run circlator inside assembly directory
+    			);
+    \$circlator->run();
+    system('touch $output_directory/$self->{prefix}$self->{assembler}_circularise_done'); 
 
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
